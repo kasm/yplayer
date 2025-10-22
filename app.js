@@ -32,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const notificationElement = document.getElementById('notification');
     const fullscreenOverlay = document.getElementById('fullscreen-overlay');
     const startFullscreenBtn = document.getElementById('start-fullscreen-btn');
+    const playlistSidebar = document.getElementById('playlist-sidebar');
+    const closePlaylistBtn = document.getElementById('close-playlist-btn');
     let notificationTimeout;
 
 
@@ -65,6 +67,10 @@ document.addEventListener('DOMContentLoaded', () => {
             videoTitleElement.textContent = firstVideo.title;
             updateActivePlaylistItem(firstVideo.id);
         }
+
+        // Enable the start button now that player is ready
+        startFullscreenBtn.disabled = false;
+        startFullscreenBtn.style.opacity = '1';
     }
 
     function startFullscreenMode() {
@@ -74,29 +80,35 @@ document.addEventListener('DOMContentLoaded', () => {
             fullscreenOverlay.style.display = 'none';
         }, 300);
 
+        // Wait for player to be ready before attempting to play or go fullscreen
+        if (!player || typeof player.getIframe !== 'function') {
+            console.log('Player not ready yet, waiting...');
+            return;
+        }
+
         // Start playing the video
-        if (player && typeof player.playVideo === 'function') {
+        if (typeof player.playVideo === 'function') {
             player.playVideo();
         }
 
-        // Request fullscreen mode for the player iframe
-        const iframe = player.getIframe();
-        if (iframe) {
-            // Small delay to ensure the overlay is hidden
-            setTimeout(() => {
-                if (iframe.requestFullscreen) {
-                    iframe.requestFullscreen().catch(err => {
-                        console.log('Fullscreen request failed:', err);
-                    });
-                } else if (iframe.webkitRequestFullscreen) {
-                    iframe.webkitRequestFullscreen();
-                } else if (iframe.mozRequestFullScreen) {
-                    iframe.mozRequestFullScreen();
-                } else if (iframe.msRequestFullscreen) {
-                    iframe.msRequestFullscreen();
-                }
-            }, 100);
-        }
+        // Request fullscreen mode for the player iframe - COMMENTED OUT
+        // const iframe = player.getIframe();
+        // if (iframe) {
+        //     // Small delay to ensure the overlay is hidden
+        //     setTimeout(() => {
+        //         if (iframe.requestFullscreen) {
+        //             iframe.requestFullscreen().catch(err => {
+        //                 console.log('Fullscreen request failed:', err);
+        //             });
+        //         } else if (iframe.webkitRequestFullscreen) {
+        //             iframe.webkitRequestFullscreen();
+        //         } else if (iframe.mozRequestFullScreen) {
+        //             iframe.mozRequestFullScreen();
+        //         } else if (iframe.msRequestFullscreen) {
+        //             iframe.msRequestFullscreen();
+        //         }
+        //     }, 100);
+        // }
     }
 
     function onPlayerStateChange(event) {
@@ -104,10 +116,25 @@ document.addEventListener('DOMContentLoaded', () => {
         if (event.data === YT.PlayerState.PLAYING) {
             // When video is playing, update time every 2 seconds
             timeUpdateInterval = setInterval(saveCurrentTime, 2000);
-        } else {
+            // Hide playlist when video is playing
+            hidePlaylist();
+        } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
             // Save one last time when paused or ended
             saveCurrentTime();
+            // Show playlist when video is paused or ended
+            showPlaylist();
+        } else {
+            // Save for other states too
+            saveCurrentTime();
         }
+    }
+
+    function showPlaylist() {
+        playlistSidebar.classList.add('show');
+    }
+
+    function hidePlaylist() {
+        playlistSidebar.classList.remove('show');
     }
 
 
@@ -215,6 +242,9 @@ document.addEventListener('DOMContentLoaded', () => {
         currentVideoId = videoId;
         videoTitleElement.textContent = videoTitle;
         updateActivePlaylistItem(videoId);
+
+        // Hide playlist when a new video is selected
+        hidePlaylist();
     }
 
     function generatePlaylist() {
@@ -302,6 +332,11 @@ document.addEventListener('DOMContentLoaded', () => {
         loadAndPrepareVideos();
         generatePlaylist();
         setupSwipeGestures();
+
+        // Disable start button until player is ready
+        startFullscreenBtn.disabled = true;
+        startFullscreenBtn.style.opacity = '0.5';
+
         // Player initialization is handled by onYouTubeIframeAPIReady
     }
 
@@ -309,6 +344,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addVideoButton.addEventListener('click', handleAddVideo);
     clearPlaylistButton.addEventListener('click', handleClearPlaylist);
     startFullscreenBtn.addEventListener('click', startFullscreenMode);
+    closePlaylistBtn.addEventListener('click', hidePlaylist);
 
     // --- Initial Setup ---
     initializeApp();

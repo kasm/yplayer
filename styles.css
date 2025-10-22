@@ -12,18 +12,19 @@ body {
     min-width: 44px;
 }
 
-/* Style for the responsive video container */
-.video-container {
-    position: relative;
-    padding-bottom: 56.25%; /* 16:9 aspect ratio */
-    height: 0;
-    overflow: hidden;
-    max-width: 100%;
+/* Style for the fullscreen video container */
+.video-container-fullscreen {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
     background: #000;
+    z-index: 10;
 }
 
-.video-container iframe,
-.video-container div {
+.video-container-fullscreen iframe,
+.video-container-fullscreen div {
     position: absolute;
     top: 0;
     left: 0;
@@ -98,8 +99,55 @@ input:focus {
 
 #start-fullscreen-btn {
     box-shadow: 0 10px 40px rgba(220, 38, 38, 0.4);
+    transition: opacity 0.3s ease;
 }
 
-#start-fullscreen-btn:active {
+#start-fullscreen-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+#start-fullscreen-btn:active:not(:disabled) {
     box-shadow: 0 5px 20px rgba(220, 38, 38, 0.6);
+}
+
+/* Playlist Sidebar - Fixed Right */
+.playlist-sidebar {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 33.333%; /* 1/3 of screen */
+    height: 100vh;
+    background: white;
+    box-shadow: -4px 0 20px rgba(0, 0, 0, 0.3);
+    z-index: 40;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    transform: translateX(100%);
+    transition: transform 0.3s ease-in-out;
+}
+
+.playlist-sidebar.show {
+    transform: translateX(0);
+}
+
+/* Tablet responsive adjustments */
+@media (max-width: 1024px) {
+    .playlist-sidebar {
+        width: 50%; /* Half screen on tablets */
+    }
+}
+
+@media (max-width: 768px) {
+    .playlist-sidebar {
+        width: 80%; /* Most of screen on small tablets/phones */
+    }
+}
+
+/* Playlist scroll area */
+.playlist-sidebar #playlist {
+    flex: 1;
+    overflow-y: auto;
+    margin-top: 10px;
 }
