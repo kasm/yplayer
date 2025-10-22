@@ -4,15 +4,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Default videos to show if localStorage is empty
     const defaultVideos = [
-        { id: 'p3-c0DF_2-I', title: 'WebGL Beginner\'s Guide - Get Started in 15 Minutes' },
-        { id: '3JZ_D3ELwOQ', title: 'Three.js Tutorial for Absolute Beginners' },
-        { id: 'Jc-iYMr_uHw', title: 'Introduction to Generative AI' },
-        { id: 'f01_2-x0A2Y', title: 'Advanced Three.js - Physics and Animation' },
-        { id: 'sO5APf69o_A', title: 'The Future of AI - Full Documentary' },
-        { id: 'YzP1642g__M', title: 'Shader Programming in Three.js' },
-        { id: 'Q31-g4-I7f4', title: 'Neural Networks from Scratch' },
-        { id: 'xK7sEV2y4sQ', title: 'Learn WebGL from the Ground Up' },
-        { id: 'I22f3sJ-2i0', title: 'Create a 3D Website with Three.js' }
+        { id: 'mDQ4Q6UPSzM', title: '30 MPC servers' },
+        { id: '3JZ_D3ELwOQ', title: 'training something' }
+
     ].map(v => ({ ...v, currentTime: 0 }));
 
     // --- State Variables ---
@@ -20,6 +14,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let player;
     let timeUpdateInterval;
     let currentVideoId = null;
+
+    // Touch/swipe gesture variables
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchEndX = 0;
+    let touchEndY = 0;
+    const swipeThreshold = 50; // minimum distance for a swipe
 
     // --- Element References ---
     const videoTitleElement = document.getElementById('video-title');
@@ -29,6 +30,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const addVideoButton = document.getElementById('add-video-btn');
     const clearPlaylistButton = document.getElementById('clear-playlist-btn');
     const notificationElement = document.getElementById('notification');
+    const fullscreenOverlay = document.getElementById('fullscreen-overlay');
+    const startFullscreenBtn = document.getElementById('start-fullscreen-btn');
     let notificationTimeout;
 
 
@@ -61,6 +64,38 @@ document.addEventListener('DOMContentLoaded', () => {
             const firstVideo = videos[0];
             videoTitleElement.textContent = firstVideo.title;
             updateActivePlaylistItem(firstVideo.id);
+        }
+    }
+
+    function startFullscreenMode() {
+        // Hide the overlay
+        fullscreenOverlay.style.opacity = '0';
+        setTimeout(() => {
+            fullscreenOverlay.style.display = 'none';
+        }, 300);
+
+        // Start playing the video
+        if (player && typeof player.playVideo === 'function') {
+            player.playVideo();
+        }
+
+        // Request fullscreen mode for the player iframe
+        const iframe = player.getIframe();
+        if (iframe) {
+            // Small delay to ensure the overlay is hidden
+            setTimeout(() => {
+                if (iframe.requestFullscreen) {
+                    iframe.requestFullscreen().catch(err => {
+                        console.log('Fullscreen request failed:', err);
+                    });
+                } else if (iframe.webkitRequestFullscreen) {
+                    iframe.webkitRequestFullscreen();
+                } else if (iframe.mozRequestFullScreen) {
+                    iframe.mozRequestFullScreen();
+                } else if (iframe.msRequestFullscreen) {
+                    iframe.msRequestFullscreen();
+                }
+            }, 100);
         }
     }
 
@@ -186,7 +221,7 @@ document.addEventListener('DOMContentLoaded', () => {
         playlistElement.innerHTML = '';
         videos.forEach(video => {
             const item = document.createElement('div');
-            item.className = 'p-3 rounded-lg cursor-pointer transition-colors duration-200 hover:bg-blue-100 flex items-center space-x-3';
+            item.className = 'playlist-item p-4 md:p-3 rounded-lg transition-colors duration-200 hover:bg-blue-100 flex items-center space-x-3 min-h-[56px]';
             item.dataset.videoId = video.id;
 
             const timeInSeconds = video.currentTime || 0;
@@ -194,14 +229,21 @@ document.addEventListener('DOMContentLoaded', () => {
             const seconds = Math.floor(timeInSeconds % 60).toString().padStart(2, '0');
             const timeString = `${minutes}:${seconds}`;
 
-            const playIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
-            const titleSpan = `<span class="flex-1 truncate">${video.title}</span>`;
-            const timeSpan = `<span class="text-xs text-gray-500 font-mono time-display">${timeString}</span>`;
+            const playIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+            const titleSpan = `<span class="flex-1 truncate text-sm md:text-base">${video.title}</span>`;
+            const timeSpan = `<span class="text-xs md:text-xs text-gray-500 font-mono time-display">${timeString}</span>`;
             item.innerHTML = playIcon + titleSpan + timeSpan;
 
+            // Touch event handling
             item.addEventListener('click', () => {
                 loadVideo(video.id, video.title);
             });
+
+            // Prevent text selection on long press
+            item.addEventListener('touchstart', () => {
+                item.style.userSelect = 'none';
+            });
+
             playlistElement.appendChild(item);
         });
     }
@@ -219,15 +261,54 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- Swipe Gesture Functions ---
+
+    function handleSwipe() {
+        const diffX = touchEndX - touchStartX;
+        const diffY = touchEndY - touchStartY;
+
+        // Check if horizontal swipe is more significant than vertical
+        if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > swipeThreshold) {
+            const currentIndex = videos.findIndex(v => v.id === currentVideoId);
+
+            if (diffX > 0 && currentIndex > 0) {
+                // Swipe right - previous video
+                const prevVideo = videos[currentIndex - 1];
+                loadVideo(prevVideo.id, prevVideo.title);
+            } else if (diffX < 0 && currentIndex < videos.length - 1) {
+                // Swipe left - next video
+                const nextVideo = videos[currentIndex + 1];
+                loadVideo(nextVideo.id, nextVideo.title);
+            }
+        }
+    }
+
+    function setupSwipeGestures() {
+        const videoContainer = document.getElementById('video-player-container');
+
+        videoContainer.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+            touchStartY = e.changedTouches[0].screenY;
+        }, { passive: true });
+
+        videoContainer.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            touchEndY = e.changedTouches[0].screenY;
+            handleSwipe();
+        }, { passive: true });
+    }
+
     function initializeApp() {
         loadAndPrepareVideos();
         generatePlaylist();
+        setupSwipeGestures();
         // Player initialization is handled by onYouTubeIframeAPIReady
     }
 
     // --- Event Listeners ---
     addVideoButton.addEventListener('click', handleAddVideo);
     clearPlaylistButton.addEventListener('click', handleClearPlaylist);
+    startFullscreenBtn.addEventListener('click', startFullscreenMode);
 
     // --- Initial Setup ---
     initializeApp();
