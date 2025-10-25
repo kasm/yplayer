@@ -2,10 +2,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Configuration ---
     const STORAGE_KEY = 'youtube_playlist_app_videos';
 
-    // Default videos to show if localStorage is empty
+    // Google Sheet URL for loading playlist
+    // Format: Sheet should have 3 columns: Number, Title, YouTube URL
+    // Example:
+    // 1    Video Title    https://www.youtube.com/watch?v=VIDEO_ID
+    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS6eW5VxIT_wKgcxxzEYntmY3fHR1IogNkld_crnOdZfefWF1FkUP-KveexrFaANFZ8FKGEsTAwX8tt/pubhtml?gid=0&single=true';
+
+    // Default videos to show if Google Sheet loading fails or is not configured
     const defaultVideos = [
-        { id: 'mDQ4Q6UPSzM', title: '30 MPC servers' },
-        { id: '3JZ_D3ELwOQ', title: 'training something' }
+        // { id: 'mDQ4Q6UPSzM', title: '30 MPC servers' },
+        // { id: '3JZ_D3ELwOQ', title: 'training something' }
 
     ].map(v => ({ ...v, currentTime: 0 }));
 
@@ -22,6 +28,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let touchEndY = 0;
     const swipeThreshold = 50; // minimum distance for a swipe
 
+    // --- Utility Functions ---
+
+    function isValidVideoId(videoId) {
+        // YouTube video IDs are exactly 11 characters: letters, numbers, underscore, hyphen
+        return videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId);
+    }
+
     // --- Element References ---
     const videoTitleElement = document.getElementById('video-title');
     const playlistElement = document.getElementById('playlist');
@@ -34,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const startFullscreenBtn = document.getElementById('start-fullscreen-btn');
     const playlistSidebar = document.getElementById('playlist-sidebar');
     const closePlaylistBtn = document.getElementById('close-playlist-btn');
+    const reloadSheetBtn = document.getElementById('reload-sheet-btn');
     let notificationTimeout;
 
 
@@ -41,36 +55,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // This global function is called by the YouTube API script when it's ready.
     window.onYouTubeIframeAPIReady = function() {
-        const firstVideo = videos.length > 0 ? videos[0] : null;
-        currentVideoId = firstVideo ? firstVideo.id : null;
-
+        // Don't load a video ID initially, wait for user to start
+        // This prevents errors when videos array is empty or not yet loaded
         player = new YT.Player('video-player', {
             height: '100%',
             width: '100%',
-            videoId: currentVideoId,
             playerVars: {
                 'playsinline': 1,
-                'rel': 0,
-                'start': firstVideo ? Math.floor(firstVideo.currentTime) : 0
+                'rel': 0
             },
             events: {
                 'onReady': onPlayerReady,
-                'onStateChange': onPlayerStateChange
+                'onStateChange': onPlayerStateChange,
+                'onError': onPlayerError
             }
         });
     };
 
     function onPlayerReady(event) {
-        // Update UI for the initially loaded video.
+        console.log('=== onPlayerReady called ===');
+        console.log('Videos array:', videos);
+        console.log('Videos count:', videos.length);
+
+        // Load the first video if available
         if (videos.length > 0) {
             const firstVideo = videos[0];
-            videoTitleElement.textContent = firstVideo.title;
-            updateActivePlaylistItem(firstVideo.id);
+            console.log('First video object:', firstVideo);
+            console.log('First video ID:', firstVideo.id);
+            console.log('First video title:', firstVideo.title);
+
+            currentVideoId = firstVideo.id;
+
+            // Only load if it's a valid video ID
+            const isValid = isValidVideoId(firstVideo.id);
+            console.log('Is first video ID valid?', isValid);
+
+            if (isValid) {
+                console.log('Cueing video with ID:', firstVideo.id);
+                player.cueVideoById({
+                    videoId: firstVideo.id,
+                    startSeconds: Math.floor(firstVideo.currentTime || 0)
+                });
+                videoTitleElement.textContent = firstVideo.title;
+                updateActivePlaylistItem(firstVideo.id);
+                console.log('✓ First video cued successfully');
+            } else {
+                console.error('✗ First video has invalid ID:', firstVideo.id);
+                console.error('Full first video object:', firstVideo);
+                videoTitleElement.textContent = 'No valid video available';
+            }
+        } else {
+            console.warn('No videos in playlist');
+            videoTitleElement.textContent = 'No videos in playlist';
         }
 
         // Enable the start button now that player is ready
         startFullscreenBtn.disabled = false;
         startFullscreenBtn.style.opacity = '1';
+
+        console.log('=== onPlayerReady complete ===');
     }
 
     function startFullscreenMode() {
@@ -129,6 +172,59 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function onPlayerError(event) {
+        // YouTube player error codes:
+        // 2 – Invalid parameter (usually bad video ID)
+        // 5 – HTML5 player error
+        // 100 – Video not found or removed
+        // 101 – Video not allowed to be played in embedded players
+        // 150 – Same as 101
+
+        const errorMessages = {
+            2: 'Invalid video ID',
+            5: 'Player error occurred',
+            100: 'Video not found or has been removed',
+            101: 'Video cannot be played in embedded player',
+            150: 'Video cannot be played in embedded player'
+        };
+
+        const errorCode = event.data;
+        const errorMessage = errorMessages[errorCode] || 'Unknown error';
+
+        console.error(`YouTube Player Error ${errorCode}: ${errorMessage}`);
+        showNotification(`Error: ${errorMessage}. Skipping to next video...`);
+
+        // Try to play next video after a short delay
+        setTimeout(() => {
+            playNextVideo();
+        }, 2000);
+    }
+
+    function playNextVideo() {
+        if (videos.length === 0) {
+            showNotification('No videos in playlist');
+            showPlaylist();
+            return;
+        }
+
+        const currentIndex = currentVideoId ? videos.findIndex(v => v.id === currentVideoId) : -1;
+
+        // Find the next valid video starting from current position
+        for (let i = currentIndex + 1; i < videos.length; i++) {
+            const video = videos[i];
+            if (isValidVideoId(video.id)) {
+                loadVideo(video.id, video.title);
+                return;
+            } else {
+                console.warn(`Skipping invalid video at index ${i}: ${video.title} (ID: ${video.id})`);
+            }
+        }
+
+        // No more valid videos found
+        showNotification('No more valid videos in playlist');
+        showPlaylist();
+    }
+
     function showPlaylist() {
         playlistSidebar.classList.add('show');
     }
@@ -137,6 +233,154 @@ document.addEventListener('DOMContentLoaded', () => {
         playlistSidebar.classList.remove('show');
     }
 
+
+    // --- Google Sheets Functions ---
+
+    /**
+     * Converts the public HTML URL to a CSV download URL.
+     */
+    function getCsvUrl(url) {
+        try {
+            const urlObj = new URL(url);
+            const pathParts = urlObj.pathname.split('/');
+
+            // Find the document ID part
+            const docIdIndex = pathParts.indexOf('e');
+            if (docIdIndex === -1 || docIdIndex + 1 >= pathParts.length) {
+                return url.replace('pubhtml?', 'pub?output=csv&').replace('pubhtml', 'pub?output=csv');
+            }
+            const docId = pathParts[docIdIndex + 1];
+
+            // Get the GID from the query parameters
+            const gid = urlObj.searchParams.get('gid');
+            if (gid === null) {
+                return url.replace('pubhtml?', 'pub?output=csv&').replace('pubhtml', 'pub?output=csv');
+            }
+
+            // Construct the CSV export URL
+            return `https://docs.google.com/spreadsheets/d/e/${docId}/pub?output=csv&gid=${gid}`;
+
+        } catch (e) {
+            console.error("Failed to parse sheet URL:", e);
+            return url.replace('pubhtml?', 'pub?output=csv&').replace('pubhtml', 'pub?output=csv');
+        }
+    }
+
+    /**
+     * Parses CSV text into video objects.
+     * Expected format: Number, Title, YouTube URL (tab or comma separated)
+     * Example: 1    Video Title    https://www.youtube.com/watch?v=VIDEO_ID
+     */
+    function parseVideosFromCSV(csvText) {
+        console.log('=== parseVideosFromCSV called ===');
+        console.log('CSV Text length:', csvText.length);
+        console.log('First 200 chars:', csvText.substring(0, 200));
+
+        const rows = csvText.trim().split('\n');
+        console.log('Total rows:', rows.length);
+
+        const videos = [];
+
+        // Skip header row, start from index 1
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i].trim();
+            if (!row) {
+                console.log(`Row ${i + 1}: Empty, skipping`);
+                continue;
+            }
+
+            console.log(`\n--- Row ${i + 1} ---`);
+            console.log('Raw row:', row);
+
+            // Split by tab first, then fall back to comma
+            let parts = row.split('\t').map(s => s.trim());
+            console.log('After tab split, parts count:', parts.length);
+            console.log('Parts:', parts);
+
+            // If we only got 1 part, try splitting by comma
+            if (parts.length === 1) {
+                parts = row.split(',').map(s => s.trim().replace(/^["']|["']$/g, ''));
+                console.log('After comma split, parts count:', parts.length);
+                console.log('Parts:', parts);
+            }
+
+            // We expect at least 3 columns: Number, Title, URL
+            if (parts.length >= 3 && parts[1] && parts[2]) {
+                const number = parts[0];
+                const title = parts[1];
+                const url = parts[2];
+
+                console.log(`  Number: "${number}"`);
+                console.log(`  Title: "${title}"`);
+                console.log(`  URL: "${url}"`);
+
+                // Extract video ID from the URL
+                const videoId = extractVideoId(url);
+                console.log(`  Extracted video ID: "${videoId}"`);
+
+                const isValid = isValidVideoId(videoId);
+                console.log(`  Is valid: ${isValid}`);
+
+                if (videoId && isValid) {
+                    const videoObj = {
+                        id: videoId,
+                        title: title,
+                        currentTime: 0
+                    };
+                    videos.push(videoObj);
+                    console.log(`  ✓ Added video:`, videoObj);
+                } else {
+                    console.warn(`  ✗ Skipping invalid video: "${title}" - URL: ${url} - Extracted ID: ${videoId}`);
+                }
+            } else {
+                console.warn(`  ✗ Skipping row: Not enough columns (expected 3, got ${parts.length})`);
+                console.warn(`  Parts:`, parts);
+            }
+        }
+
+        console.log(`\n=== Parse complete: ${videos.length} valid videos ===`);
+        console.log('Final videos array:', videos);
+        return videos;
+    }
+
+    /**
+     * Loads videos from Google Sheets.
+     */
+    async function loadVideosFromSheet() {
+        console.log('=== loadVideosFromSheet called ===');
+        console.log('Sheet URL:', SHEET_URL);
+
+        try {
+            const csvUrl = getCsvUrl(SHEET_URL);
+            console.log('CSV URL:', csvUrl);
+
+            const response = await fetch(csvUrl);
+            console.log('Fetch response status:', response.status);
+            console.log('Fetch response ok:', response.ok);
+
+            if (!response.ok) {
+                throw new Error(`Failed to fetch: ${response.statusText}`);
+            }
+
+            const csvText = await response.text();
+            console.log('CSV text received, length:', csvText.length);
+
+            const sheetVideos = parseVideosFromCSV(csvText);
+            console.log('Parsed sheet videos:', sheetVideos);
+
+            if (sheetVideos.length > 0) {
+                console.log(`✓ Loaded ${sheetVideos.length} videos from Google Sheet`);
+                return sheetVideos;
+            } else {
+                console.warn('No videos found in sheet, using defaults');
+                return defaultVideos;
+            }
+        } catch (error) {
+            console.error('✗ Error loading videos from sheet:', error);
+            showNotification('Failed to load playlist from Google Sheets, using defaults');
+            return defaultVideos;
+        }
+    }
 
     // --- Core Functions ---
 
@@ -185,7 +429,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function extractVideoId(url) {
         if (!url) return null;
-        if (url.length === 11 && !url.includes('.')) return url;
+        // Check if it's already a video ID (11 characters, alphanumeric, underscore, hyphen)
+        if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
+
+        // Extract from URL
         const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
         const match = url.match(regex);
         return match ? match[1] : null;
@@ -204,6 +451,10 @@ document.addEventListener('DOMContentLoaded', () => {
             showNotification('Could not find a valid YouTube video ID in the URL.');
             return;
         }
+        if (!isValidVideoId(videoId)) {
+            showNotification('Invalid video ID format. YouTube IDs must be 11 characters.');
+            return;
+        }
         if (videos.some(video => video.id === videoId)) {
             showNotification('This video is already in the playlist.');
             return;
@@ -214,6 +465,7 @@ document.addEventListener('DOMContentLoaded', () => {
         generatePlaylist();
         videoUrlInput.value = '';
         videoTitleInput.value = '';
+        showNotification('Video added to playlist!');
     }
 
     function handleClearPlaylist() {
@@ -228,8 +480,55 @@ document.addEventListener('DOMContentLoaded', () => {
         videoTitleElement.textContent = 'Playlist Cleared';
     }
 
+    async function handleReloadSheet() {
+        // Show loading state
+        playlistElement.innerHTML = '<div class="p-8 text-center text-gray-500"><svg class="animate-spin h-6 w-6 text-blue-500 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Loading from Google Sheets...</div>';
+
+        try {
+            const sheetVideos = await loadVideosFromSheet();
+            console.warn(' sheetVideos ', sheetVideos)
+
+            // Preserve currentTime for existing videos
+            const existingVideos = videos || [];
+            videos = sheetVideos.map(sheetVideo => {
+                const existing = existingVideos.find(v => v.id === sheetVideo.id);
+                return {
+                    id: sheetVideo.id,
+                    title: sheetVideo.title,
+                    currentTime: existing ? existing.currentTime : 0
+                };
+            });
+
+            saveVideos();
+            generatePlaylist();
+
+            // If a video is currently playing, update the title
+            if (currentVideoId) {
+                const currentVideo = videos.find(v => v.id === currentVideoId);
+                if (currentVideo) {
+                    videoTitleElement.textContent = currentVideo.title;
+                }
+            }
+
+            showNotification(`Playlist reloaded: ${videos.length} videos`);
+        } catch (error) {
+            console.error('Error reloading from sheet:', error);
+            showNotification('Failed to reload playlist');
+            generatePlaylist(); // Restore previous playlist
+        }
+    }
+
     function loadVideo(videoId, videoTitle) {
         if (!player) return;
+
+        // Validate video ID before attempting to load
+        if (!isValidVideoId(videoId)) {
+            console.error(`Invalid video ID: ${videoId}`);
+            showNotification(`Skipping invalid video: ${videoTitle}`);
+            // Don't call playNextVideo here to avoid infinite loop
+            // Let the error handler manage it instead
+            return;
+        }
 
         const videoData = videos.find(v => v.id === videoId);
         const startTime = videoData ? Math.floor(videoData.currentTime) : 0;
@@ -380,8 +679,45 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function initializeApp() {
-        loadAndPrepareVideos();
+    async function initializeApp() {
+        console.log('=== initializeApp called ===');
+
+        // Show loading state
+        playlistElement.innerHTML = '<div class="p-8 text-center text-gray-500">Loading playlist...</div>';
+
+        // Try to load from Google Sheets first
+        const storedVideos = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        console.log('Stored videos from localStorage:', storedVideos);
+
+        if (!storedVideos) {
+            console.log('No stored videos, loading from Google Sheet...');
+            // No stored videos, try to load from Google Sheet
+            const sheetVideos = await loadVideosFromSheet();
+            console.log('Loaded from sheet:', sheetVideos);
+
+            videos = sheetVideos.map(v => ({
+                id: v.id,
+                title: v.title,
+                currentTime: v.currentTime || 0
+            }));
+            console.log('Videos array after mapping:', videos);
+
+            // Save to localStorage for future use
+            saveVideos();
+        } else {
+            console.log('Using stored videos from localStorage');
+            // Use stored videos
+            videos = storedVideos.map(v => ({
+                id: v.id,
+                title: v.title,
+                currentTime: v.currentTime || 0
+            }));
+            console.log('Videos array after mapping:', videos);
+        }
+
+        console.log('Final videos array:', videos);
+        console.log('Videos count:', videos.length);
+
         generatePlaylist();
         setupSwipeGestures();
         setupClickToPause();
@@ -390,6 +726,7 @@ document.addEventListener('DOMContentLoaded', () => {
         startFullscreenBtn.disabled = true;
         startFullscreenBtn.style.opacity = '0.5';
 
+        console.log('=== initializeApp complete ===');
         // Player initialization is handled by onYouTubeIframeAPIReady
     }
 
@@ -398,6 +735,7 @@ document.addEventListener('DOMContentLoaded', () => {
     clearPlaylistButton.addEventListener('click', handleClearPlaylist);
     startFullscreenBtn.addEventListener('click', startFullscreenMode);
     closePlaylistBtn.addEventListener('click', hidePlaylist);
+    reloadSheetBtn.addEventListener('click', handleReloadSheet);
 
     // --- Initial Setup ---
     initializeApp();
