@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Google Sheet Data Viewer</title>
+    <!-- Load Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Use the Inter font family */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Add a simple fade-in animation for the table */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-out forwards;
+        }
+    </style>
+    <!-- Import the Inter font from Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-100 text-gray-900 min-h-screen p-4 md:p-8">
+
+    <div class="container mx-auto max-w-5xl">
+        <header class="mb-6">
+            <h1 class="text-3xl font-bold text-gray-800">Google Sheet Data</h1>
+            <p class="text-gray-600 mt-1">Displaying data from your shared spreadsheet.</p>
+        </header>
+
+        <!-- Container for the table. Will show loading/error messages here. -->
+        <div id="table-container" class="bg-white rounded-lg shadow-md overflow-hidden">
+            <!-- Loading State -->
+            <div id="loading-message" class="p-8 text-center text-gray-500">
+                <svg class="animate-spin h-6 w-6 text-blue-500 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Loading spreadsheet data...
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // The URL from your request
+        const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS6eW5VxIT_wKgcxxzEYntmY3fHR1IogNkld_crnOdZfefWF1FkUP-KveexrFaANFZ8FKGEsTAwX8tt/pubhtml?gid=0&single=true';
+
+        /**
+         * Converts the public HTML URL to a CSV download URL.
+         * @param {string} url The public Google Sheet URL.
+         * @returns {string} The CSV download URL.
+         */
+        function getCsvUrl(url) {
+            // Create a URL object to easily parse components
+            try {
+                const urlObj = new URL(url);
+                const pathParts = urlObj.pathname.split('/');
+                
+                // Find the document ID part
+                // e.g., /spreadsheets/d/e/2PACX.../pubhtml
+                const docIdIndex = pathParts.indexOf('e');
+                if (docIdIndex === -1 || docIdIndex + 1 >= pathParts.length) {
+                    console.warn('Could not parse document ID from URL path. Using fallback.');
+                    // If parsing fails, use the string replacement method
+                    return url.replace('pubhtml?', 'pub?output=csv&').replace('pubhtml', 'pub?output=csv');
+                }
+                const docId = pathParts[docIdIndex + 1];
+
+                // Get the GID from the query parameters
+                const gid = urlObj.searchParams.get('gid');
+                if (gid === null) {
+                    console.warn('Could not find "gid" parameter in URL. Using fallback.');
+                    // If parsing fails, use the string replacement method
+                    return url.replace('pubhtml?', 'pub?output=csv&').replace('pubhtml', 'pub?output=csv');
+                }
+                
+                // Construct the new CSV export URL
+                // The base origin is 'https://docs.google.com'
+                return `https://docs.google.com/spreadsheets/d/e/${docId}/pub?output=csv&gid=${gid}`;
+
+            } catch (e) {
+                console.error("Failed to parse sheet URL, using fallback:", e);
+                // Fallback to the old, fragile method if parsing fails
+                // but fix the double-question-mark bug
+                return url.replace('pubhtml?', 'pub?output=csv&').replace('pubhtml', 'pub?output=csv');
+            }
+        }
+
+        /**
+         * Parses a simple CSV text into a 2D array.
+         * This is a basic parser and may not handle complex cases
+         * (like commas within quoted fields).
+         * @param {string} csvText The raw CSV data.
+         * @returns {string[][]} A 2D array of strings.
+         */
+        function parseCSV(csvText) {
+            // Split the text into rows, trimming any extra whitespace
+            const rows = csvText.trim().split('\n');
+            // Split each row into cells
+            return rows.map(row => row.split(','));
+        }
+
+        /**
+         * Creates and renders an HTML table from the parsed CSV data.
+         * @param {string[][]} data The 2D array of sheet data.
+         */
+        function createTable(data) {
+            const tableContainer = document.getElementById('table-container');
+            
+            if (!data || data.length === 0) {
+                tableContainer.innerHTML = `<div class="p-8 text-center text-red-600">No data found in the spreadsheet.</div>`;
+                return;
+            }
+
+            // Create table elements
+            const table = document.createElement('table');
+            table.className = 'min-w-full divide-y divide-gray-200 fade-in';
+
+            // Create table header (thead)
+            const thead = document.createElement('thead');
+            thead.className = 'bg-gray-50';
+            const headerRow = document.createElement('tr');
+            
+            const headers = data[0];
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.scope = 'col';
+                th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                th.textContent = headerText.trim();
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            table.appendChild(thead);
+
+            // Create table body (tbody)
+            const tbody = document.createElement('tbody');
+            tbody.className = 'bg-white divide-y divide-gray-200';
+
+            const bodyRows = data.slice(1); // All rows except the header
+            bodyRows.forEach(rowData => {
+                // Don't render empty rows
+                if (rowData.every(cell => cell.trim() === '')) {
+                    return;
+                }
+
+                const tr = document.createElement('tr');
+                tr.className = 'hover:bg-gray-50';
+                rowData.forEach(cellText => {
+                    const td = document.createElement('td');
+                    td.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-900';
+                    td.textContent = cellText.trim();
+                    tr.appendChild(td);
+                });
+                tbody.appendChild(tr);
+            });
+            table.appendChild(tbody);
+
+            // Clear loading message and add the table
+            tableContainer.innerHTML = '';
+            // Add a container for horizontal scrolling on small screens
+            const scrollContainer = document.createElement('div');
+            scrollContainer.className = 'overflow-x-auto';
+            scrollContainer.appendChild(table);
+            tableContainer.appendChild(scrollContainer);
+        }
+
+        // Main function to run when the page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            const csvUrl = getCsvUrl(sheetUrl);
+            const tableContainer = document.getElementById('table-container');
+
+            fetch(csvUrl)
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error(`Network response was not ok: ${response.statusText}`);
+                    }
+                    return response.text();
+                })
+                .then(csvText => {
+                    const data = parseCSV(csvText);
+                    createTable(data);
+                })
+                .catch(error => {
+                    console.error('Error fetching or parsing sheet data:', error);
+                    tableContainer.innerHTML = `<div class="p-8 text-center text-red-600">
+                        <strong>Error loading data.</strong>
+                        <p class="mt-1 text-sm">${error.message}</p>
+                        <p class="mt-2 text-xs text-gray-500">Please ensure the Google Sheet is published and the link is correct.</p>
+                    </div>`;
+                });
+        });
+    </script>
+</body>
+</html>
+

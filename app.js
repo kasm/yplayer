@@ -328,10 +328,63 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { passive: true });
     }
 
+    // --- Click to Pause/Play Functions ---
+
+    function setupClickToPause() {
+        const videoContainer = document.getElementById('video-player-container');
+
+        // Handle both mouse clicks and touch taps
+        videoContainer.addEventListener('click', handleVideoContainerClick);
+        videoContainer.addEventListener('touchend', handleVideoContainerTouch);
+    }
+
+    function handleVideoContainerClick(e) {
+        const clickX = e.clientX;
+        const screenWidth = window.innerWidth;
+        const leftThirdBoundary = screenWidth / 3;
+
+        // Check if click is in the left 1/3 of screen
+        if (clickX <= leftThirdBoundary) {
+            togglePlayPause();
+        }
+    }
+
+    function handleVideoContainerTouch(e) {
+        // Only process if it's a tap (not a swipe)
+        const moveDistance = Math.abs(touchEndX - touchStartX) + Math.abs(touchEndY - touchStartY);
+
+        // If movement is very small, consider it a tap
+        if (moveDistance < 10) {
+            const touchX = e.changedTouches[0].clientX;
+            const screenWidth = window.innerWidth;
+            const leftThirdBoundary = screenWidth / 3;
+
+            // Check if tap is in the left 1/3 of screen
+            if (touchX <= leftThirdBoundary) {
+                togglePlayPause();
+            }
+        }
+    }
+
+    function togglePlayPause() {
+        if (!player || typeof player.getPlayerState !== 'function') {
+            return;
+        }
+
+        const playerState = player.getPlayerState();
+
+        if (playerState === YT.PlayerState.PLAYING) {
+            player.pauseVideo();
+        } else if (playerState === YT.PlayerState.PAUSED) {
+            player.playVideo();
+        }
+    }
+
     function initializeApp() {
         loadAndPrepareVideos();
         generatePlaylist();
         setupSwipeGestures();
+        setupClickToPause();
 
         // Disable start button until player is ready
         startFullscreenBtn.disabled = true;
