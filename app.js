@@ -38,10 +38,6 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Element References ---
     const videoTitleElement = document.getElementById('video-title');
     const playlistElement = document.getElementById('playlist');
-    const videoUrlInput = document.getElementById('video-url-input');
-    const videoTitleInput = document.getElementById('video-title-input');
-    const addVideoButton = document.getElementById('add-video-btn');
-    const clearPlaylistButton = document.getElementById('clear-playlist-btn');
     const notificationElement = document.getElementById('notification');
     const fullscreenOverlay = document.getElementById('fullscreen-overlay');
     const startFullscreenBtn = document.getElementById('start-fullscreen-btn');
@@ -230,7 +226,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function hidePlaylist() {
+        console.log('hidePlaylist called');
+        console.log('playlistSidebar element:', playlistSidebar);
+        console.log('Current classes:', playlistSidebar.className);
         playlistSidebar.classList.remove('show');
+        console.log('Classes after remove:', playlistSidebar.className);
     }
 
 
@@ -438,47 +438,6 @@ document.addEventListener('DOMContentLoaded', () => {
         return match ? match[1] : null;
     }
 
-    function handleAddVideo() {
-        const url = videoUrlInput.value.trim();
-        const title = videoTitleInput.value.trim();
-
-        if (!url || !title) {
-            showNotification('Please provide both a video URL/ID and a title.');
-            return;
-        }
-        const videoId = extractVideoId(url);
-        if (!videoId) {
-            showNotification('Could not find a valid YouTube video ID in the URL.');
-            return;
-        }
-        if (!isValidVideoId(videoId)) {
-            showNotification('Invalid video ID format. YouTube IDs must be 11 characters.');
-            return;
-        }
-        if (videos.some(video => video.id === videoId)) {
-            showNotification('This video is already in the playlist.');
-            return;
-        }
-
-        videos.push({ id: videoId, title: title, currentTime: 0 });
-        saveVideos();
-        generatePlaylist();
-        videoUrlInput.value = '';
-        videoTitleInput.value = '';
-        showNotification('Video added to playlist!');
-    }
-
-    function handleClearPlaylist() {
-        if (player && typeof player.stopVideo === 'function') {
-            player.stopVideo();
-            player.clearVideo();
-        }
-        currentVideoId = null;
-        videos = [];
-        saveVideos();
-        generatePlaylist();
-        videoTitleElement.textContent = 'Playlist Cleared';
-    }
 
     async function handleReloadSheet() {
         // Show loading state
@@ -731,10 +690,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Event Listeners ---
-    addVideoButton.addEventListener('click', handleAddVideo);
-    clearPlaylistButton.addEventListener('click', handleClearPlaylist);
+    console.log('Setting up event listeners...');
+    console.log('closePlaylistBtn:', closePlaylistBtn);
+
     startFullscreenBtn.addEventListener('click', startFullscreenMode);
-    closePlaylistBtn.addEventListener('click', hidePlaylist);
+    closePlaylistBtn.addEventListener('click', () => {
+        console.log('Close button clicked!');
+        hidePlaylist();
+    });
     reloadSheetBtn.addEventListener('click', handleReloadSheet);
 
     // --- Initial Setup ---

@@ -57,19 +57,8 @@
             </button>
         </div>
 
-        <!-- Add Video Form -->
-        <div class="mb-4 border-b border-gray-300 pb-4">
-            <h4 class="font-semibold text-gray-700 mb-3 text-base">Add New Video</h4>
-            <div class="space-y-3">
-                <input type="text" id="video-url-input" placeholder="YouTube URL or Video ID" class="w-full p-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition touch-target">
-                <input type="text" id="video-title-input" placeholder="Video Title" class="w-full p-3 text-base border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none transition touch-target">
-                <button id="add-video-btn" class="w-full bg-blue-500 text-white p-3 text-base rounded-lg hover:bg-blue-600 active:bg-blue-700 transition-colors duration-200 font-semibold touch-target">Add to Playlist</button>
-            </div>
-        </div>
-
-        <div class="mb-3 space-y-2">
+        <div class="mb-3">
             <button id="reload-sheet-btn" class="w-full text-base bg-green-500 text-white py-3 px-4 rounded-lg hover:bg-green-600 active:bg-green-700 transition-colors duration-200 font-semibold touch-target">Reload from Google Sheets</button>
-            <button id="clear-playlist-btn" class="w-full text-base bg-red-500 text-white py-3 px-4 rounded-lg hover:bg-red-600 active:bg-red-700 transition-colors duration-200 font-semibold touch-target">Clear All Videos</button>
         </div>
 
         <div id="playlist" class="space-y-2 overflow-y-auto playlist-scroll flex-grow">
