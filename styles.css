@@ -92,24 +92,6 @@ input:focus {
     }
 }
 
-/* Fullscreen overlay styling */
-#fullscreen-overlay {
-    backdrop-filter: blur(10px);
-}
-
-#start-fullscreen-btn {
-    box-shadow: 0 10px 40px rgba(220, 38, 38, 0.4);
-    transition: opacity 0.3s ease;
-}
-
-#start-fullscreen-btn:disabled {
-    cursor: not-allowed;
-    opacity: 0.5;
-}
-
-#start-fullscreen-btn:active:not(:disabled) {
-    box-shadow: 0 5px 20px rgba(220, 38, 38, 0.6);
-}
 
 /* Playlist Sidebar - Fixed Right */
 .playlist-sidebar {

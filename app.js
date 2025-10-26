@@ -105,50 +105,9 @@ document.addEventListener('DOMContentLoaded', () => {
             videoTitleElement.textContent = 'No videos in playlist';
         }
 
-        // Enable the start button now that player is ready
-        startFullscreenBtn.disabled = false;
-        startFullscreenBtn.style.opacity = '1';
-
         console.log('=== onPlayerReady complete ===');
     }
 
-    function startFullscreenMode() {
-        // Hide the overlay
-        fullscreenOverlay.style.opacity = '0';
-        setTimeout(() => {
-            fullscreenOverlay.style.display = 'none';
-        }, 300);
-
-        // Wait for player to be ready before attempting to play or go fullscreen
-        if (!player || typeof player.getIframe !== 'function') {
-            console.log('Player not ready yet, waiting...');
-            return;
-        }
-
-        // Start playing the video
-        if (typeof player.playVideo === 'function') {
-            player.playVideo();
-        }
-
-        // Request fullscreen mode for the player iframe - COMMENTED OUT
-        // const iframe = player.getIframe();
-        // if (iframe) {
-        //     // Small delay to ensure the overlay is hidden
-        //     setTimeout(() => {
-        //         if (iframe.requestFullscreen) {
-        //             iframe.requestFullscreen().catch(err => {
-        //                 console.log('Fullscreen request failed:', err);
-        //             });
-        //         } else if (iframe.webkitRequestFullscreen) {
-        //             iframe.webkitRequestFullscreen();
-        //         } else if (iframe.mozRequestFullScreen) {
-        //             iframe.mozRequestFullScreen();
-        //         } else if (iframe.msRequestFullscreen) {
-        //             iframe.msRequestFullscreen();
-        //         }
-        //     }, 100);
-        // }
-    }
 
     function onPlayerStateChange(event) {
         clearInterval(timeUpdateInterval); // Clear any existing interval
@@ -693,7 +652,6 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('Setting up event listeners...');
     console.log('closePlaylistBtn:', closePlaylistBtn);
 
-    startFullscreenBtn.addEventListener('click', startFullscreenMode);
     closePlaylistBtn.addEventListener('click', () => {
         console.log('Close button clicked!');
         hidePlaylist();
