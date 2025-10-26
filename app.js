@@ -49,8 +49,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- YouTube IFrame API Setup ---
 
-    // This global function is called by the YouTube API script when it's ready.
-    window.onYouTubeIframeAPIReady = function() {
+    // Function to initialize the YouTube player
+    function initializeYouTubePlayer() {
+        console.log('=== initializeYouTubePlayer called ===');
         // Don't load a video ID initially, wait for user to start
         // This prevents errors when videos array is empty or not yet loaded
         player = new YT.Player('video-player', {
@@ -66,6 +67,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 'onError': onPlayerError
             }
         });
+    }
+
+    // This global function is called by the YouTube API script when it's ready.
+    window.onYouTubeIframeAPIReady = function() {
+        console.log('=== onYouTubeIframeAPIReady called ===');
+        initializeYouTubePlayer();
     };
 
     function onPlayerReady(event) {
@@ -660,4 +667,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Initial Setup ---
     initializeApp();
+
+    // Check if YouTube API is already loaded (e.g., from cache on soft reload)
+    // If so, initialize the player immediately
+    if (typeof YT !== 'undefined' && YT.Player) {
+        console.log('=== YouTube API already loaded, initializing player ===');
+        initializeYouTubePlayer();
+    }
 });
