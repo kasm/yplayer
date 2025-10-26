@@ -563,14 +563,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleVideoContainerClick(e) {
-        const clickX = e.clientX;
-        const screenWidth = window.innerWidth;
-        const leftThirdBoundary = screenWidth / 3;
-
-        // Check if click is in the left 1/3 of screen
-        if (clickX <= leftThirdBoundary) {
-            togglePlayPause();
-        }
+        // Toggle play/pause on any click on the video
+        togglePlayPause();
     }
 
     function handleVideoContainerTouch(e) {
@@ -579,14 +573,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // If movement is very small, consider it a tap
         if (moveDistance < 10) {
-            const touchX = e.changedTouches[0].clientX;
-            const screenWidth = window.innerWidth;
-            const leftThirdBoundary = screenWidth / 3;
-
-            // Check if tap is in the left 1/3 of screen
-            if (touchX <= leftThirdBoundary) {
-                togglePlayPause();
-            }
+            // Toggle play/pause on any tap on the video
+            togglePlayPause();
         }
     }
 
