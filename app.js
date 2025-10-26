@@ -3,9 +3,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const STORAGE_KEY = 'youtube_playlist_app_videos';
 
     // Google Sheet URL for loading playlist
-    // Format: Sheet should have 3 columns: Number, Title, YouTube URL
-    // Example:
-    // 1    Video Title    https://www.youtube.com/watch?v=VIDEO_ID
+    // Format: Sheet should have 3 columns: Number, Title, YouTube URL or Local File Path
+    // Examples:
+    // 1    YouTube Video Title    https://www.youtube.com/watch?v=VIDEO_ID
+    // 2    Local Video Title      output/s0601.mp4
     const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS6eW5VxIT_wKgcxxzEYntmY3fHR1IogNkld_crnOdZfefWF1FkUP-KveexrFaANFZ8FKGEsTAwX8tt/pubhtml?gid=0&single=true';
 
     // Default videos to show if Google Sheet loading fails or is not configured
@@ -35,6 +36,24 @@ document.addEventListener('DOMContentLoaded', () => {
         return videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId);
     }
 
+    function isLocalVideoPath(path) {
+        // Check if it's a local video file path (supports common video extensions)
+        if (!path) return false;
+        const videoExtensions = /\.(mp4|webm|ogg|mkv|avi|mov|flv|wmv)$/i;
+        return videoExtensions.test(path);
+    }
+
+    function getVideoType(url) {
+        // Determine if the URL is a YouTube video or a local file
+        if (isLocalVideoPath(url)) {
+            return 'local';
+        }
+        if (extractVideoId(url)) {
+            return 'youtube';
+        }
+        return null;
+    }
+
     // --- Element References ---
     const videoTitleElement = document.getElementById('video-title');
     const playlistElement = document.getElementById('playlist');
@@ -44,8 +63,82 @@ document.addEventListener('DOMContentLoaded', () => {
     const playlistSidebar = document.getElementById('playlist-sidebar');
     const closePlaylistBtn = document.getElementById('close-playlist-btn');
     const reloadSheetBtn = document.getElementById('reload-sheet-btn');
+    const html5Player = document.getElementById('html5-player');
+    const youtubePlayerDiv = document.getElementById('video-player');
     let notificationTimeout;
+    let currentPlayerType = null; // 'youtube' or 'local'
 
+
+    // --- Player Switching Functions ---
+
+    function switchToYouTubePlayer() {
+        if (currentPlayerType === 'youtube') return;
+
+        // Hide HTML5 player
+        html5Player.classList.add('hidden');
+        html5Player.pause();
+        html5Player.src = '';
+
+        // Show YouTube player
+        youtubePlayerDiv.classList.remove('hidden');
+        currentPlayerType = 'youtube';
+    }
+
+    function switchToHTML5Player() {
+        if (currentPlayerType === 'local') return;
+
+        // Hide YouTube player
+        youtubePlayerDiv.classList.add('hidden');
+        if (player && typeof player.pauseVideo === 'function') {
+            player.pauseVideo();
+        }
+
+        // Show HTML5 player
+        html5Player.classList.remove('hidden');
+        currentPlayerType = 'local';
+    }
+
+    // --- HTML5 Player Event Handlers ---
+
+    function setupHTML5PlayerEvents() {
+        html5Player.addEventListener('play', () => {
+            clearInterval(timeUpdateInterval);
+            timeUpdateInterval = setInterval(saveCurrentTime, 2000);
+            hidePlaylist();
+        });
+
+        html5Player.addEventListener('pause', () => {
+            clearInterval(timeUpdateInterval);
+            saveCurrentTime();
+            showPlaylist();
+        });
+
+        html5Player.addEventListener('ended', () => {
+            clearInterval(timeUpdateInterval);
+            saveCurrentTime();
+            showPlaylist();
+        });
+
+        html5Player.addEventListener('error', (e) => {
+            console.error('HTML5 Player Error:', e);
+            showNotification('Error loading local video file. Skipping to next...');
+            setTimeout(() => {
+                playNextVideo();
+            }, 2000);
+        });
+
+        html5Player.addEventListener('timeupdate', () => {
+            // Update time display in playlist in real-time
+            if (currentVideoId) {
+                const timeDisplay = playlistElement.querySelector(`div[data-video-id="${currentVideoId}"] .time-display`);
+                if (timeDisplay && html5Player.currentTime) {
+                    const minutes = Math.floor(html5Player.currentTime / 60).toString().padStart(2, '0');
+                    const seconds = Math.floor(html5Player.currentTime % 60).toString().padStart(2, '0');
+                    timeDisplay.textContent = `${minutes}:${seconds}`;
+                }
+            }
+        });
+    }
 
     // --- YouTube IFrame API Setup ---
 
@@ -86,26 +179,39 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('First video object:', firstVideo);
             console.log('First video ID:', firstVideo.id);
             console.log('First video title:', firstVideo.title);
+            console.log('First video type:', firstVideo.type);
 
-            currentVideoId = firstVideo.id;
+            const videoType = firstVideo.type || 'youtube';
 
-            // Only load if it's a valid video ID
-            const isValid = isValidVideoId(firstVideo.id);
-            console.log('Is first video ID valid?', isValid);
+            if (videoType === 'youtube') {
+                currentVideoId = firstVideo.id;
 
-            if (isValid) {
-                console.log('Cueing video with ID:', firstVideo.id);
-                player.cueVideoById({
-                    videoId: firstVideo.id,
-                    startSeconds: Math.floor(firstVideo.currentTime || 0)
-                });
+                // Only load if it's a valid video ID
+                const isValid = isValidVideoId(firstVideo.id);
+                console.log('Is first video ID valid?', isValid);
+
+                if (isValid) {
+                    console.log('Cueing video with ID:', firstVideo.id);
+                    switchToYouTubePlayer();
+                    player.cueVideoById({
+                        videoId: firstVideo.id,
+                        startSeconds: Math.floor(firstVideo.currentTime || 0)
+                    });
+                    videoTitleElement.textContent = firstVideo.title;
+                    updateActivePlaylistItem(firstVideo.id);
+                    console.log('✓ First video cued successfully');
+                } else {
+                    console.error('✗ First video has invalid ID:', firstVideo.id);
+                    console.error('Full first video object:', firstVideo);
+                    videoTitleElement.textContent = 'No valid video available';
+                }
+            } else if (videoType === 'local') {
+                // For local videos, just set up the UI, don't auto-load
+                console.log('First video is local, preparing HTML5 player');
+                switchToHTML5Player();
+                currentVideoId = firstVideo.id;
                 videoTitleElement.textContent = firstVideo.title;
                 updateActivePlaylistItem(firstVideo.id);
-                console.log('✓ First video cued successfully');
-            } else {
-                console.error('✗ First video has invalid ID:', firstVideo.id);
-                console.error('Full first video object:', firstVideo);
-                videoTitleElement.textContent = 'No valid video available';
             }
         } else {
             console.warn('No videos in playlist');
@@ -174,7 +280,13 @@ document.addEventListener('DOMContentLoaded', () => {
         // Find the next valid video starting from current position
         for (let i = currentIndex + 1; i < videos.length; i++) {
             const video = videos[i];
-            if (isValidVideoId(video.id)) {
+            const videoType = video.type || 'youtube';
+
+            // Check if video is valid based on its type
+            const isValid = (videoType === 'local' && isLocalVideoPath(video.id)) ||
+                          (videoType === 'youtube' && isValidVideoId(video.id));
+
+            if (isValid) {
                 loadVideo(video.id, video.title);
                 return;
             } else {
@@ -234,8 +346,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Parses CSV text into video objects.
-     * Expected format: Number, Title, YouTube URL (tab or comma separated)
-     * Example: 1    Video Title    https://www.youtube.com/watch?v=VIDEO_ID
+     * Expected format: Number, Title, YouTube URL or Local File Path (tab or comma separated)
+     * Examples:
+     *   1    YouTube Video Title    https://www.youtube.com/watch?v=VIDEO_ID
+     *   2    Local Video Title      output/s0601.mp4
      */
     function parseVideosFromCSV(csvText) {
         console.log('=== parseVideosFromCSV called ===');
@@ -280,23 +394,42 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log(`  Title: "${title}"`);
                 console.log(`  URL: "${url}"`);
 
-                // Extract video ID from the URL
-                const videoId = extractVideoId(url);
-                console.log(`  Extracted video ID: "${videoId}"`);
+                // Check if it's a local video file or YouTube URL
+                const videoType = getVideoType(url);
+                console.log(`  Video type: "${videoType}"`);
 
-                const isValid = isValidVideoId(videoId);
-                console.log(`  Is valid: ${isValid}`);
-
-                if (videoId && isValid) {
+                if (videoType === 'local') {
+                    // It's a local video file
                     const videoObj = {
-                        id: videoId,
+                        id: url,  // Store the file path as ID for local files
                         title: title,
-                        currentTime: 0
+                        currentTime: 0,
+                        type: 'local'
                     };
                     videos.push(videoObj);
-                    console.log(`  ✓ Added video:`, videoObj);
+                    console.log(`  ✓ Added local video:`, videoObj);
+                } else if (videoType === 'youtube') {
+                    // Extract video ID from the YouTube URL
+                    const videoId = extractVideoId(url);
+                    console.log(`  Extracted video ID: "${videoId}"`);
+
+                    const isValid = isValidVideoId(videoId);
+                    console.log(`  Is valid: ${isValid}`);
+
+                    if (videoId && isValid) {
+                        const videoObj = {
+                            id: videoId,
+                            title: title,
+                            currentTime: 0,
+                            type: 'youtube'
+                        };
+                        videos.push(videoObj);
+                        console.log(`  ✓ Added YouTube video:`, videoObj);
+                    } else {
+                        console.warn(`  ✗ Skipping invalid YouTube video: "${title}" - URL: ${url} - Extracted ID: ${videoId}`);
+                    }
                 } else {
-                    console.warn(`  ✗ Skipping invalid video: "${title}" - URL: ${url} - Extracted ID: ${videoId}`);
+                    console.warn(`  ✗ Skipping unknown video type: "${title}" - URL: ${url}`);
                 }
             } else {
                 console.warn(`  ✗ Skipping row: Not enough columns (expected 3, got ${parts.length})`);
@@ -352,11 +485,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function loadAndPrepareVideos() {
         const storedVideos = JSON.parse(localStorage.getItem(STORAGE_KEY));
-        // Ensure every video object has a currentTime property, defaulting to 0
+        // Ensure every video object has a currentTime property and type, defaulting to 0 and 'youtube'
         videos = (storedVideos || defaultVideos).map(v => ({
             id: v.id,
             title: v.title,
-            currentTime: v.currentTime || 0
+            currentTime: v.currentTime || 0,
+            type: v.type || 'youtube'
         }));
     }
 
@@ -365,10 +499,21 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveCurrentTime() {
-        if (!player || typeof player.getCurrentTime !== 'function' || !currentVideoId) {
-            return; // Player not ready or no video loaded
+        if (!currentVideoId) {
+            return; // No video loaded
         }
-        const currentTime = player.getCurrentTime();
+
+        let currentTime = 0;
+
+        // Get current time from the appropriate player
+        if (currentPlayerType === 'youtube' && player && typeof player.getCurrentTime === 'function') {
+            currentTime = player.getCurrentTime();
+        } else if (currentPlayerType === 'local' && html5Player && !isNaN(html5Player.currentTime)) {
+            currentTime = html5Player.currentTime;
+        } else {
+            return; // Player not ready
+        }
+
         const videoIndex = videos.findIndex(v => v.id === currentVideoId);
 
         if (videoIndex > -1) {
@@ -420,7 +565,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 return {
                     id: sheetVideo.id,
                     title: sheetVideo.title,
-                    currentTime: existing ? existing.currentTime : 0
+                    currentTime: existing ? existing.currentTime : 0,
+                    type: sheetVideo.type || 'youtube'
                 };
             });
 
@@ -444,31 +590,66 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function loadVideo(videoId, videoTitle) {
-        if (!player) return;
-
-        // Validate video ID before attempting to load
-        if (!isValidVideoId(videoId)) {
-            console.error(`Invalid video ID: ${videoId}`);
-            showNotification(`Skipping invalid video: ${videoTitle}`);
-            // Don't call playNextVideo here to avoid infinite loop
-            // Let the error handler manage it instead
+        const videoData = videos.find(v => v.id === videoId);
+        if (!videoData) {
+            console.error(`Video not found: ${videoId}`);
             return;
         }
 
-        const videoData = videos.find(v => v.id === videoId);
-        const startTime = videoData ? Math.floor(videoData.currentTime) : 0;
+        const videoType = videoData.type || 'youtube';
+        const startTime = Math.floor(videoData.currentTime) || 0;
 
-        player.loadVideoById({
-            videoId: videoId,
-            startSeconds: startTime
-        });
+        if (videoType === 'local') {
+            // Load local video file
+            switchToHTML5Player();
 
-        currentVideoId = videoId;
-        videoTitleElement.textContent = videoTitle;
-        updateActivePlaylistItem(videoId);
+            html5Player.src = videoId; // For local files, videoId is the file path
+            html5Player.currentTime = startTime;
 
-        // Hide playlist when a new video is selected
-        hidePlaylist();
+            // Attempt to play
+            const playPromise = html5Player.play();
+            if (playPromise !== undefined) {
+                playPromise.catch(error => {
+                    console.error('Error playing local video:', error);
+                    showNotification(`Error playing: ${videoTitle}`);
+                });
+            }
+
+            currentVideoId = videoId;
+            videoTitleElement.textContent = videoTitle;
+            updateActivePlaylistItem(videoId);
+            hidePlaylist();
+
+        } else if (videoType === 'youtube') {
+            // Load YouTube video
+            if (!player) {
+                console.error('YouTube player not initialized');
+                return;
+            }
+
+            // Validate video ID before attempting to load
+            if (!isValidVideoId(videoId)) {
+                console.error(`Invalid YouTube video ID: ${videoId}`);
+                showNotification(`Skipping invalid video: ${videoTitle}`);
+                return;
+            }
+
+            switchToYouTubePlayer();
+
+            player.loadVideoById({
+                videoId: videoId,
+                startSeconds: startTime
+            });
+
+            currentVideoId = videoId;
+            videoTitleElement.textContent = videoTitle;
+            updateActivePlaylistItem(videoId);
+            hidePlaylist();
+
+        } else {
+            console.error(`Unknown video type: ${videoType}`);
+            showNotification(`Unknown video type for: ${videoTitle}`);
+        }
     }
 
     function generatePlaylist() {
@@ -483,7 +664,13 @@ document.addEventListener('DOMContentLoaded', () => {
             const seconds = Math.floor(timeInSeconds % 60).toString().padStart(2, '0');
             const timeString = `${minutes}:${seconds}`;
 
-            const playIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-gray-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+            const videoType = video.type || 'youtube';
+
+            // Different icons for YouTube vs local files
+            const playIcon = videoType === 'local'
+                ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`
+                : `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+
             const titleSpan = `<span class="flex-1 truncate text-3xl md:text-4xl">${video.title}</span>`;
             const timeSpan = `<span class="text-xl md:text-2xl text-gray-500 font-mono time-display">${timeString}</span>`;
             item.innerHTML = playIcon + titleSpan + timeSpan;
@@ -579,16 +766,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function togglePlayPause() {
-        if (!player || typeof player.getPlayerState !== 'function') {
-            return;
-        }
+        if (currentPlayerType === 'youtube') {
+            if (!player || typeof player.getPlayerState !== 'function') {
+                return;
+            }
 
-        const playerState = player.getPlayerState();
+            const playerState = player.getPlayerState();
 
-        if (playerState === YT.PlayerState.PLAYING) {
-            player.pauseVideo();
-        } else if (playerState === YT.PlayerState.PAUSED) {
-            player.playVideo();
+            if (playerState === YT.PlayerState.PLAYING) {
+                player.pauseVideo();
+            } else if (playerState === YT.PlayerState.PAUSED) {
+                player.playVideo();
+            }
+        } else if (currentPlayerType === 'local') {
+            if (html5Player.paused) {
+                html5Player.play();
+            } else {
+                html5Player.pause();
+            }
         }
     }
 
@@ -611,7 +806,8 @@ document.addEventListener('DOMContentLoaded', () => {
             videos = sheetVideos.map(v => ({
                 id: v.id,
                 title: v.title,
-                currentTime: v.currentTime || 0
+                currentTime: v.currentTime || 0,
+                type: v.type || 'youtube'
             }));
             console.log('Videos array after mapping:', videos);
 
@@ -623,7 +819,8 @@ document.addEventListener('DOMContentLoaded', () => {
             videos = storedVideos.map(v => ({
                 id: v.id,
                 title: v.title,
-                currentTime: v.currentTime || 0
+                currentTime: v.currentTime || 0,
+                type: v.type || 'youtube'
             }));
             console.log('Videos array after mapping:', videos);
         }
@@ -634,6 +831,7 @@ document.addEventListener('DOMContentLoaded', () => {
         generatePlaylist();
         setupSwipeGestures();
         setupClickToPause();
+        setupHTML5PlayerEvents();
 
         // Disable start button until player is ready
         startFullscreenBtn.disabled = true;
