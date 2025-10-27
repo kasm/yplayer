@@ -133,3 +133,9 @@ input:focus {
     overflow-y: auto;
     margin-top: 10px;
 }
+
+/* Open playlist button - ensure it's visible and clickable */
+#open-playlist-btn {
+    pointer-events: auto;
+    cursor: pointer;
+}

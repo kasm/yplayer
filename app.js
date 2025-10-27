@@ -62,6 +62,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const startFullscreenBtn = document.getElementById('start-fullscreen-btn');
     const playlistSidebar = document.getElementById('playlist-sidebar');
     const closePlaylistBtn = document.getElementById('close-playlist-btn');
+    const openPlaylistBtn = document.getElementById('open-playlist-btn');
     const reloadSheetBtn = document.getElementById('reload-sheet-btn');
     const html5Player = document.getElementById('html5-player');
     const youtubePlayerDiv = document.getElementById('video-player');
@@ -104,19 +105,19 @@ document.addEventListener('DOMContentLoaded', () => {
         html5Player.addEventListener('play', () => {
             clearInterval(timeUpdateInterval);
             timeUpdateInterval = setInterval(saveCurrentTime, 2000);
-            hidePlaylist();
+            hidePlaylist(); // Hide playlist when video plays
         });
 
         html5Player.addEventListener('pause', () => {
             clearInterval(timeUpdateInterval);
             saveCurrentTime();
-            showPlaylist();
+            showPlaylist(); // Show playlist when video is paused
         });
 
         html5Player.addEventListener('ended', () => {
             clearInterval(timeUpdateInterval);
             saveCurrentTime();
-            showPlaylist();
+            showPlaylist(); // Show playlist when video ends
         });
 
         html5Player.addEventListener('error', (e) => {
@@ -300,7 +301,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showPlaylist() {
+        console.log('showPlaylist called');
+        console.log('playlistSidebar element:', playlistSidebar);
+        console.log('Current classes:', playlistSidebar.className);
         playlistSidebar.classList.add('show');
+        console.log('Classes after add:', playlistSidebar.className);
+        // Hide the open button when playlist is visible
+        if (openPlaylistBtn) {
+            openPlaylistBtn.style.display = 'none';
+        }
     }
 
     function hidePlaylist() {
@@ -309,6 +318,10 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Current classes:', playlistSidebar.className);
         playlistSidebar.classList.remove('show');
         console.log('Classes after remove:', playlistSidebar.className);
+        // Show the open button when playlist is hidden
+        if (openPlaylistBtn) {
+            openPlaylistBtn.style.display = 'block';
+        }
     }
 
 
@@ -606,14 +619,10 @@ document.addEventListener('DOMContentLoaded', () => {
             html5Player.src = videoId; // For local files, videoId is the file path
             html5Player.currentTime = startTime;
 
-            // Attempt to play
-            const playPromise = html5Player.play();
-            if (playPromise !== undefined) {
-                playPromise.catch(error => {
-                    console.error('Error playing local video:', error);
-                    showNotification(`Error playing: ${videoTitle}`);
-                });
-            }
+            // Don't auto-play to avoid browser restrictions
+            // User can click play button on the video controls
+            // Only attempt to play if it's from a user interaction (e.g., clicking a playlist item)
+            // The HTML5 controls will handle play/pause
 
             currentVideoId = videoId;
             videoTitleElement.textContent = videoTitle;
@@ -750,17 +759,27 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function handleVideoContainerClick(e) {
-        // Toggle play/pause on any click on the video
+        // For local videos with HTML5 player, don't interfere with native controls
+        if (currentPlayerType === 'local') {
+            // HTML5 video has built-in controls, so we don't need custom click handling
+            return;
+        }
+        // Toggle play/pause on any click on the video (YouTube only)
         togglePlayPause();
     }
 
     function handleVideoContainerTouch(e) {
+        // For local videos with HTML5 player, don't interfere with native controls
+        if (currentPlayerType === 'local') {
+            return;
+        }
+
         // Only process if it's a tap (not a swipe)
         const moveDistance = Math.abs(touchEndX - touchStartX) + Math.abs(touchEndY - touchStartY);
 
         // If movement is very small, consider it a tap
         if (moveDistance < 10) {
-            // Toggle play/pause on any tap on the video
+            // Toggle play/pause on any tap on the video (YouTube only)
             togglePlayPause();
         }
     }
@@ -844,11 +863,27 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Event Listeners ---
     console.log('Setting up event listeners...');
     console.log('closePlaylistBtn:', closePlaylistBtn);
+    console.log('openPlaylistBtn:', openPlaylistBtn);
 
     closePlaylistBtn.addEventListener('click', () => {
         console.log('Close button clicked!');
         hidePlaylist();
     });
+
+    if (openPlaylistBtn) {
+        openPlaylistBtn.addEventListener('click', (e) => {
+            console.log('Open playlist button clicked!');
+            e.preventDefault();
+            e.stopPropagation();
+            showPlaylist();
+        });
+        // Ensure button is visible initially
+        openPlaylistBtn.style.display = 'block';
+        console.log('Open playlist button initialized');
+    } else {
+        console.error('Open playlist button not found!');
+    }
+
     reloadSheetBtn.addEventListener('click', handleReloadSheet);
 
     // --- Initial Setup ---
