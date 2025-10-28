@@ -1,0 +1,22 @@
+{
+  "name": "yplayer",
+  "version": "1.0.0",
+  "description": "YouTube videos player and organizer with local file support",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "keywords": [
+    "video",
+    "player",
+    "youtube",
+    "playlist"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}

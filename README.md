@@ -51,10 +51,38 @@ The app automatically detects whether each entry is a YouTube video or a local f
 
 ## Setup
 
-1. Update the `SHEET_URL` in [app.js](d:\m\ai_test\v1\yplayer\app.js) with your Google Sheets public URL
-2. Ensure your Google Sheet is published to the web
-3. Place local video files in accessible directories (e.g., `output/` folder)
-4. Open [index.html](d:\m\ai_test\v1\yplayer\index.html) in a browser
+### Installation
+
+1. Install Node.js dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Place your video files in the `output/` folder
+
+3. Update the `SHEET_URL` in [app.js](d:\m\ai_test\v1\yplayer\app.js) with your Google Sheets public URL
+
+4. Ensure your Google Sheet is published to the web
+
+### Running the Server
+
+Start the Node.js server:
+```bash
+npm start
+```
+
+The server will start on `http://localhost:3000` and serve:
+- The web application at `http://localhost:3000/`
+- Video files at `http://localhost:3000/output/video.mp4`
+- Video list API at `http://localhost:3000/api/videos`
+
+### Features of the Server
+
+- **Video streaming with range requests**: Supports seeking in videos
+- **Proper MIME types**: Automatically sets correct content types for all video formats
+- **CORS enabled**: Allows cross-origin requests
+- **Static file serving**: Serves all HTML, CSS, and JS files
+- **Video directory listing**: API endpoint to list all available videos
 
 ## Local File Paths
 
