@@ -66,6 +66,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const reloadSheetBtn = document.getElementById('reload-sheet-btn');
     const html5Player = document.getElementById('html5-player');
     const youtubePlayerDiv = document.getElementById('video-player');
+    const clickOverlay = document.getElementById('click-overlay');
     let notificationTimeout;
     let currentPlayerType = null; // 'youtube' or 'local'
 
@@ -748,63 +749,37 @@ document.addEventListener('DOMContentLoaded', () => {
         }, { passive: true });
     }
 
-    // --- Click to Pause/Play Functions ---
 
-    function setupClickToPause() {
-        const videoContainer = document.getElementById('video-player-container');
-
-        // Handle both mouse clicks and touch taps
-        videoContainer.addEventListener('click', handleVideoContainerClick);
-        videoContainer.addEventListener('touchend', handleVideoContainerTouch);
-    }
-
-    function handleVideoContainerClick(e) {
-        // For local videos with HTML5 player, don't interfere with native controls
-        if (currentPlayerType === 'local') {
-            // HTML5 video has built-in controls, so we don't need custom click handling
-            return;
-        }
-        // Toggle play/pause on any click on the video (YouTube only)
+function setupClickToPause() {
+    // Мы вешаем ОДИН обработчик на наш новый оверлей
+    clickOverlay.addEventListener('click', () => {
+        // Эта функция уже существует в вашем коде и
+        // правильно обрабатывает ОБА типа плееров (YouTube и local)
         togglePlayPause();
-    }
+    });
+}
 
-    function handleVideoContainerTouch(e) {
-        // For local videos with HTML5 player, don't interfere with native controls
-        if (currentPlayerType === 'local') {
+function togglePlayPause() {
+    if (currentPlayerType === 'youtube') {
+        if (!player || typeof player.getPlayerState !== 'function') {
             return;
         }
 
-        // Only process if it's a tap (not a swipe)
-        const moveDistance = Math.abs(touchEndX - touchStartX) + Math.abs(touchEndY - touchStartY);
+        const playerState = player.getPlayerState();
 
-        // If movement is very small, consider it a tap
-        if (moveDistance < 10) {
-            // Toggle play/pause on any tap on the video (YouTube only)
-            togglePlayPause();
+        if (playerState === YT.PlayerState.PLAYING) {
+            player.pauseVideo();
+        } else if (playerState === YT.PlayerState.PAUSED) {
+            player.playVideo();
+        }
+    } else if (currentPlayerType === 'local') {
+        if (html5Player.paused) {
+            html5Player.play();
+        } else {
+            html5Player.pause();
         }
     }
-
-    function togglePlayPause() {
-        if (currentPlayerType === 'youtube') {
-            if (!player || typeof player.getPlayerState !== 'function') {
-                return;
-            }
-
-            const playerState = player.getPlayerState();
-
-            if (playerState === YT.PlayerState.PLAYING) {
-                player.pauseVideo();
-            } else if (playerState === YT.PlayerState.PAUSED) {
-                player.playVideo();
-            }
-        } else if (currentPlayerType === 'local') {
-            if (html5Player.paused) {
-                html5Player.play();
-            } else {
-                html5Player.pause();
-            }
-        }
-    }
+}
 
     async function initializeApp() {
         console.log('=== initializeApp called ===');
