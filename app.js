@@ -2,12 +2,16 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- Configuration ---
     const STORAGE_KEY = 'youtube_playlist_app_videos';
 
+    // LOADING FILELIST FROM GOOGLE SHEET - COMMENTED OUT
     // Google Sheet URL for loading playlist
     // Format: Sheet should have 3 columns: Number, Title, YouTube URL or Local File Path
     // Examples:
     // 1    YouTube Video Title    https://www.youtube.com/watch?v=VIDEO_ID
     // 2    Local Video Title      output/s0601.mp4
-    const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS6eW5VxIT_wKgcxxzEYntmY3fHR1IogNkld_crnOdZfefWF1FkUP-KveexrFaANFZ8FKGEsTAwX8tt/pubhtml?gid=0&single=true';
+    // const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vS6eW5VxIT_wKgcxxzEYntmY3fHR1IogNkld_crnOdZfefWF1FkUP-KveexrFaANFZ8FKGEsTAwX8tt/pubhtml?gid=0&single=true';
+
+    // Now using local API to load file list from output folder
+    const PLAYLIST_API_URL = '/api/playlist';
 
     // Default videos to show if Google Sheet loading fails or is not configured
     const defaultVideos = [
@@ -21,6 +25,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let player;
     let timeUpdateInterval;
     let currentVideoId = null;
+    let folderStructure = null;
+    let currentFolder = null;
+    let folderHistory = [];
 
     // Touch/swipe gesture variables
     let touchStartX = 0;
@@ -30,11 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const swipeThreshold = 50; // minimum distance for a swipe
 
     // --- Utility Functions ---
-
-    function isValidVideoId(videoId) {
-        // YouTube video IDs are exactly 11 characters: letters, numbers, underscore, hyphen
-        return videoId && /^[a-zA-Z0-9_-]{11}$/.test(videoId);
-    }
 
     function isLocalVideoPath(path) {
         // Check if it's a local video file path (supports common video extensions)
@@ -48,7 +50,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isLocalVideoPath(url)) {
             return 'local';
         }
-        if (extractVideoId(url)) {
+        if (YouTubePlayer.extractVideoId(url)) {
             return 'youtube';
         }
         return null;
@@ -147,20 +149,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // Function to initialize the YouTube player
     function initializeYouTubePlayer() {
         console.log('=== initializeYouTubePlayer called ===');
-        // Don't load a video ID initially, wait for user to start
-        // This prevents errors when videos array is empty or not yet loaded
-        player = new YT.Player('video-player', {
-            height: '100%',
-            width: '100%',
-            playerVars: {
-                'playsinline': 1,
-                'rel': 0
-            },
-            events: {
-                'onReady': onPlayerReady,
-                'onStateChange': onPlayerStateChange,
-                'onError': onPlayerError
-            }
+        player = YouTubePlayer.initializePlayer('video-player', {
+            onReady: onPlayerReady,
+            onStateChange: onPlayerStateChange,
+            onError: onPlayerError
         });
     }
 
@@ -189,16 +181,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 currentVideoId = firstVideo.id;
 
                 // Only load if it's a valid video ID
-                const isValid = isValidVideoId(firstVideo.id);
+                const isValid = YouTubePlayer.isValidVideoId(firstVideo.id);
                 console.log('Is first video ID valid?', isValid);
 
                 if (isValid) {
                     console.log('Cueing video with ID:', firstVideo.id);
                     switchToYouTubePlayer();
-                    player.cueVideoById({
-                        videoId: firstVideo.id,
-                        startSeconds: Math.floor(firstVideo.currentTime || 0)
-                    });
+                    YouTubePlayer.cueVideo(firstVideo.id, firstVideo.currentTime || 0);
                     videoTitleElement.textContent = firstVideo.title;
                     updateActivePlaylistItem(firstVideo.id);
                     console.log('✓ First video cued successfully');
@@ -225,13 +214,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
     function onPlayerStateChange(event) {
+        const PlayerStates = YouTubePlayer.getPlayerStates();
         clearInterval(timeUpdateInterval); // Clear any existing interval
-        if (event.data === YT.PlayerState.PLAYING) {
+        if (event.data === PlayerStates.PLAYING) {
             // When video is playing, update time every 2 seconds
             timeUpdateInterval = setInterval(saveCurrentTime, 2000);
             // Hide playlist when video is playing
             hidePlaylist();
-        } else if (event.data === YT.PlayerState.PAUSED || event.data === YT.PlayerState.ENDED) {
+        } else if (event.data === PlayerStates.PAUSED || event.data === PlayerStates.ENDED) {
             // Save one last time when paused or ended
             saveCurrentTime();
             // Show playlist when video is paused or ended
@@ -242,26 +232,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function onPlayerError(event) {
-        // YouTube player error codes:
-        // 2 – Invalid parameter (usually bad video ID)
-        // 5 – HTML5 player error
-        // 100 – Video not found or removed
-        // 101 – Video not allowed to be played in embedded players
-        // 150 – Same as 101
-
-        const errorMessages = {
-            2: 'Invalid video ID',
-            5: 'Player error occurred',
-            100: 'Video not found or has been removed',
-            101: 'Video cannot be played in embedded player',
-            150: 'Video cannot be played in embedded player'
-        };
-
-        const errorCode = event.data;
-        const errorMessage = errorMessages[errorCode] || 'Unknown error';
-
-        console.error(`YouTube Player Error ${errorCode}: ${errorMessage}`);
+    function onPlayerError(event, errorMessage) {
+        console.error(`YouTube Player Error ${event.data}: ${errorMessage}`);
         showNotification(`Error: ${errorMessage}. Skipping to next video...`);
 
         // Try to play next video after a short delay
@@ -286,7 +258,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Check if video is valid based on its type
             const isValid = (videoType === 'local' && isLocalVideoPath(video.id)) ||
-                          (videoType === 'youtube' && isValidVideoId(video.id));
+                          (videoType === 'youtube' && YouTubePlayer.isValidVideoId(video.id));
 
             if (isValid) {
                 loadVideo(video.id, video.title);
@@ -424,10 +396,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.log(`  ✓ Added local video:`, videoObj);
                 } else if (videoType === 'youtube') {
                     // Extract video ID from the YouTube URL
-                    const videoId = extractVideoId(url);
+                    const videoId = YouTubePlayer.extractVideoId(url);
                     console.log(`  Extracted video ID: "${videoId}"`);
 
-                    const isValid = isValidVideoId(videoId);
+                    const isValid = YouTubePlayer.isValidVideoId(videoId);
                     console.log(`  Is valid: ${isValid}`);
 
                     if (videoId && isValid) {
@@ -457,17 +429,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Loads videos from Google Sheets.
+     * Loads videos from local API (scans output folder).
      */
-    async function loadVideosFromSheet() {
-        console.log('=== loadVideosFromSheet called ===');
-        console.log('Sheet URL:', SHEET_URL);
+    async function loadVideosFromLocalAPI() {
+        console.log('=== loadVideosFromLocalAPI called ===');
+        console.log('Playlist API URL:', PLAYLIST_API_URL);
 
         try {
-            const csvUrl = getCsvUrl(SHEET_URL);
-            console.log('CSV URL:', csvUrl);
-
-            const response = await fetch(csvUrl);
+            const response = await fetch(PLAYLIST_API_URL);
             console.log('Fetch response status:', response.status);
             console.log('Fetch response ok:', response.ok);
 
@@ -475,25 +444,90 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(`Failed to fetch: ${response.statusText}`);
             }
 
-            const csvText = await response.text();
-            console.log('CSV text received, length:', csvText.length);
+            const structure = await response.json();
+            console.log('Received folder structure:', structure);
 
-            const sheetVideos = parseVideosFromCSV(csvText);
-            console.log('Parsed sheet videos:', sheetVideos);
+            // Store the folder structure
+            folderStructure = structure;
+            currentFolder = structure;
 
-            if (sheetVideos.length > 0) {
-                console.log(`✓ Loaded ${sheetVideos.length} videos from Google Sheet`);
-                return sheetVideos;
+            // Convert structure to flat list for backward compatibility
+            const playlist = flattenFolderStructure(structure);
+
+            if (playlist.length > 0) {
+                console.log(`✓ Loaded ${playlist.length} videos from local API`);
+                return playlist;
             } else {
-                console.warn('No videos found in sheet, using defaults');
+                console.warn('No videos found in output folder, using defaults');
                 return defaultVideos;
             }
         } catch (error) {
-            console.error('✗ Error loading videos from sheet:', error);
-            showNotification('Failed to load playlist from Google Sheets, using defaults');
+            console.error('✗ Error loading videos from local API:', error);
+            showNotification('Failed to load playlist from server, using defaults');
             return defaultVideos;
         }
     }
+
+    /**
+     * Flatten folder structure to a simple video list
+     */
+    function flattenFolderStructure(folder) {
+        let videos = [];
+
+        // Add videos from current folder
+        if (folder.videos) {
+            videos.push(...folder.videos);
+        }
+
+        // Add videos from subfolders
+        if (folder.folders) {
+            folder.folders.forEach(subfolder => {
+                videos.push(...flattenFolderStructure(subfolder));
+            });
+        }
+
+        return videos;
+    }
+
+    // LOADING FILELIST FROM GOOGLE SHEET - COMMENTED OUT
+    /**
+     * Loads videos from Google Sheets.
+     */
+    // async function loadVideosFromSheet() {
+    //     console.log('=== loadVideosFromSheet called ===');
+    //     console.log('Sheet URL:', SHEET_URL);
+
+    //     try {
+    //         const csvUrl = getCsvUrl(SHEET_URL);
+    //         console.log('CSV URL:', csvUrl);
+
+    //         const response = await fetch(csvUrl);
+    //         console.log('Fetch response status:', response.status);
+    //         console.log('Fetch response ok:', response.ok);
+
+    //         if (!response.ok) {
+    //             throw new Error(`Failed to fetch: ${response.statusText}`);
+    //         }
+
+    //         const csvText = await response.text();
+    //         console.log('CSV text received, length:', csvText.length);
+
+    //         const sheetVideos = parseVideosFromCSV(csvText);
+    //         console.log('Parsed sheet videos:', sheetVideos);
+
+    //         if (sheetVideos.length > 0) {
+    //             console.log(`✓ Loaded ${sheetVideos.length} videos from Google Sheet`);
+    //             return sheetVideos;
+    //         } else {
+    //             console.warn('No videos found in sheet, using defaults');
+    //             return defaultVideos;
+    //         }
+    //     } catch (error) {
+    //         console.error('✗ Error loading videos from sheet:', error);
+    //         showNotification('Failed to load playlist from Google Sheets, using defaults');
+    //         return defaultVideos;
+    //     }
+    // }
 
     // --- Core Functions ---
 
@@ -552,35 +586,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 3000);
     }
 
-    function extractVideoId(url) {
-        if (!url) return null;
-        // Check if it's already a video ID (11 characters, alphanumeric, underscore, hyphen)
-        if (/^[a-zA-Z0-9_-]{11}$/.test(url)) return url;
-
-        // Extract from URL
-        const regex = /(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?|shorts)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/;
-        const match = url.match(regex);
-        return match ? match[1] : null;
-    }
-
 
     async function handleReloadSheet() {
         // Show loading state
-        playlistElement.innerHTML = '<div class="p-8 text-center text-gray-500"><svg class="animate-spin h-6 w-6 text-blue-500 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Loading from Google Sheets...</div>';
+        playlistElement.innerHTML = '<div class="p-8 text-center text-gray-500"><svg class="animate-spin h-6 w-6 text-blue-500 mx-auto mb-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Loading from local server...</div>';
 
         try {
-            const sheetVideos = await loadVideosFromSheet();
-            console.warn(' sheetVideos ', sheetVideos)
+            const localVideos = await loadVideosFromLocalAPI();
+            console.warn(' localVideos ', localVideos)
+
+            // Reset folder navigation to root
+            currentFolder = folderStructure;
+            folderHistory = [];
 
             // Preserve currentTime for existing videos
             const existingVideos = videos || [];
-            videos = sheetVideos.map(sheetVideo => {
-                const existing = existingVideos.find(v => v.id === sheetVideo.id);
+            videos = localVideos.map(localVideo => {
+                const existing = existingVideos.find(v => v.id === localVideo.id);
                 return {
-                    id: sheetVideo.id,
-                    title: sheetVideo.title,
+                    id: localVideo.id,
+                    title: localVideo.title,
                     currentTime: existing ? existing.currentTime : 0,
-                    type: sheetVideo.type || 'youtube'
+                    type: localVideo.type || 'local'
                 };
             });
 
@@ -597,7 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showNotification(`Playlist reloaded: ${videos.length} videos`);
         } catch (error) {
-            console.error('Error reloading from sheet:', error);
+            console.error('Error reloading from local server:', error);
             showNotification('Failed to reload playlist');
             generatePlaylist(); // Restore previous playlist
         }
@@ -638,7 +665,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // Validate video ID before attempting to load
-            if (!isValidVideoId(videoId)) {
+            if (!YouTubePlayer.isValidVideoId(videoId)) {
                 console.error(`Invalid YouTube video ID: ${videoId}`);
                 showNotification(`Skipping invalid video: ${videoTitle}`);
                 return;
@@ -646,10 +673,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
             switchToYouTubePlayer();
 
-            player.loadVideoById({
-                videoId: videoId,
-                startSeconds: startTime
-            });
+            YouTubePlayer.loadVideo(videoId, startTime);
 
             currentVideoId = videoId;
             videoTitleElement.textContent = videoTitle;
@@ -664,6 +688,95 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function generatePlaylist() {
         playlistElement.innerHTML = '';
+
+        // If we have a folder structure, show folder navigation
+        if (currentFolder) {
+            generateFolderView(currentFolder);
+        } else {
+            // Fallback to old flat list
+            generateFlatPlaylist();
+        }
+    }
+
+    function generateFolderView(folder) {
+        playlistElement.innerHTML = '';
+
+        // Add back button if not at root
+        if (folderHistory.length > 0) {
+            const backItem = document.createElement('div');
+            backItem.className = 'playlist-item p-4 md:p-3 rounded-lg transition-colors duration-200 hover:bg-gray-200 flex items-center space-x-3 min-h-[56px] bg-gray-100';
+
+            const backIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-gray-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>`;
+            const backText = `<span class="flex-1 text-3xl md:text-4xl font-semibold text-gray-700">.. Back</span>`;
+            backItem.innerHTML = backIcon + backText;
+
+            backItem.addEventListener('click', () => {
+                goBackFolder();
+            });
+
+            playlistElement.appendChild(backItem);
+        }
+
+        // Add folders
+        if (folder.folders && folder.folders.length > 0) {
+            folder.folders.forEach(subfolder => {
+                const folderItem = document.createElement('div');
+                folderItem.className = 'playlist-item p-4 md:p-3 rounded-lg transition-colors duration-200 hover:bg-yellow-100 flex items-center space-x-3 min-h-[56px] border-l-4 border-yellow-500';
+
+                const folderIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-yellow-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" /></svg>`;
+                const folderName = subfolder.name.split('/').pop(); // Get last part of path
+                const videoCount = countVideosInFolder(subfolder);
+                const titleSpan = `<span class="flex-1 text-3xl md:text-4xl font-semibold">${folderName}</span>`;
+                const countSpan = `<span class="text-xl md:text-2xl text-gray-500">${videoCount} videos</span>`;
+                folderItem.innerHTML = folderIcon + titleSpan + countSpan;
+
+                folderItem.addEventListener('click', () => {
+                    enterFolder(subfolder);
+                });
+
+                playlistElement.appendChild(folderItem);
+            });
+        }
+
+        // Add videos from current folder
+        if (folder.videos && folder.videos.length > 0) {
+            folder.videos.forEach(video => {
+                const item = document.createElement('div');
+                item.className = 'playlist-item p-4 md:p-3 rounded-lg transition-colors duration-200 hover:bg-blue-100 flex items-center space-x-3 min-h-[56px]';
+                item.dataset.videoId = video.id;
+
+                const timeInSeconds = video.currentTime || 0;
+                const minutes = Math.floor(timeInSeconds / 60).toString().padStart(2, '0');
+                const seconds = Math.floor(timeInSeconds % 60).toString().padStart(2, '0');
+                const timeString = `${minutes}:${seconds}`;
+
+                const videoType = video.type || 'youtube';
+
+                // Different icons for YouTube vs local files
+                const playIcon = videoType === 'local'
+                    ? `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-green-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`
+                    : `<svg xmlns="http://www.w3.org/2000/svg" class="h-7 w-7 md:h-6 md:w-6 text-red-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`;
+
+                const titleSpan = `<span class="flex-1 truncate text-3xl md:text-4xl">${video.title}</span>`;
+                const timeSpan = `<span class="text-xl md:text-2xl text-gray-500 font-mono time-display">${timeString}</span>`;
+                item.innerHTML = playIcon + titleSpan + timeSpan;
+
+                // Touch event handling
+                item.addEventListener('click', () => {
+                    loadVideo(video.id, video.title);
+                });
+
+                // Prevent text selection on long press
+                item.addEventListener('touchstart', () => {
+                    item.style.userSelect = 'none';
+                });
+
+                playlistElement.appendChild(item);
+            });
+        }
+    }
+
+    function generateFlatPlaylist() {
         videos.forEach(video => {
             const item = document.createElement('div');
             item.className = 'playlist-item p-4 md:p-3 rounded-lg transition-colors duration-200 hover:bg-blue-100 flex items-center space-x-3 min-h-[56px]';
@@ -697,6 +810,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
             playlistElement.appendChild(item);
         });
+    }
+
+    function countVideosInFolder(folder) {
+        let count = folder.videos ? folder.videos.length : 0;
+        if (folder.folders) {
+            folder.folders.forEach(subfolder => {
+                count += countVideosInFolder(subfolder);
+            });
+        }
+        return count;
+    }
+
+    function enterFolder(folder) {
+        folderHistory.push(currentFolder);
+        currentFolder = folder;
+        generateFolderView(folder);
+    }
+
+    function goBackFolder() {
+        if (folderHistory.length > 0) {
+            currentFolder = folderHistory.pop();
+            generateFolderView(currentFolder);
+        }
     }
 
     function updateActivePlaylistItem(videoId) {
@@ -787,21 +923,21 @@ function togglePlayPause() {
         // Show loading state
         playlistElement.innerHTML = '<div class="p-8 text-center text-gray-500">Loading playlist...</div>';
 
-        // Try to load from Google Sheets first
+        // Try to load from local API first
         const storedVideos = JSON.parse(localStorage.getItem(STORAGE_KEY));
         console.log('Stored videos from localStorage:', storedVideos);
 
         if (!storedVideos) {
-            console.log('No stored videos, loading from Google Sheet...');
-            // No stored videos, try to load from Google Sheet
-            const sheetVideos = await loadVideosFromSheet();
-            console.log('Loaded from sheet:', sheetVideos);
+            console.log('No stored videos, loading from local API...');
+            // No stored videos, try to load from local API
+            const localVideos = await loadVideosFromLocalAPI();
+            console.log('Loaded from local API:', localVideos);
 
-            videos = sheetVideos.map(v => ({
+            videos = localVideos.map(v => ({
                 id: v.id,
                 title: v.title,
                 currentTime: v.currentTime || 0,
-                type: v.type || 'youtube'
+                type: v.type || 'local'
             }));
             console.log('Videos array after mapping:', videos);
 
@@ -814,7 +950,7 @@ function togglePlayPause() {
                 id: v.id,
                 title: v.title,
                 currentTime: v.currentTime || 0,
-                type: v.type || 'youtube'
+                type: v.type || 'local'
             }));
             console.log('Videos array after mapping:', videos);
         }
